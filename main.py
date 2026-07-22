@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 import discord
 from discord.ext import commands
@@ -43,17 +44,26 @@ class ServerBot(commands.Bot):
 
     async def setup_hook(self) -> None:
         """
-        Betölti a modulokat, majd szinkronizálja
-        a slash parancsokat.
+        Automatikusan betölti a cogs mappa összes modulját,
+        majd szinkronizálja a slash parancsokat.
         """
 
-        await self.load_extension("cogs.utility")
-        print("Modul betöltve: cogs.utility")
+        cogs_mappa = Path(__file__).parent / "cogs"
 
-        synced_commands = await self.tree.sync()
+        for fajl in sorted(cogs_mappa.glob("*.py")):
+            # Az __init__.py fájlt nem töltjük be modulként.
+            if fajl.name.startswith("_"):
+                continue
+
+            modul_neve = f"cogs.{fajl.stem}"
+
+            await self.load_extension(modul_neve)
+            print(f"Modul betöltve: {modul_neve}")
+
+        parancsok = await self.tree.sync()
 
         print(
-            f"{len(synced_commands)} slash parancs szinkronizálva."
+            f"{len(parancsok)} slash parancs szinkronizálva."
         )
 
 
