@@ -1,0 +1,20 @@
+# Titkos környezeti változók
+.env
+
+# Python gyorsítótár
+__pycache__/
+*.py[cod]
+
+# Virtuális környezet
+.venv/
+venv/
+
+# Helyi adatbázis
+database.db
+*.db-journal
+
+# Fejlesztői beállítások
+.vscode/
+
+# Naplófájlok
+*.log
