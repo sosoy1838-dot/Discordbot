@@ -5,6 +5,8 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
+from database.db import init_database
+
 
 # --------------------------------------------------
 # Token betöltése
@@ -44,14 +46,16 @@ class ServerBot(commands.Bot):
 
     async def setup_hook(self) -> None:
         """
-        Automatikusan betölti a cogs mappa összes modulját,
+        Inicializálja az adatbázist, betölti a modulokat,
         majd szinkronizálja a slash parancsokat.
         """
+
+        await init_database()
+        print("Adatbázis inicializálva.")
 
         cogs_mappa = Path(__file__).parent / "cogs"
 
         for fajl in sorted(cogs_mappa.glob("*.py")):
-            # Az __init__.py fájlt nem töltjük be modulként.
             if fajl.name.startswith("_"):
                 continue
 
