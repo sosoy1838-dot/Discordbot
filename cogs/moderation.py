@@ -2,7 +2,9 @@ from datetime import timedelta
 
 import discord
 from discord import app_commands
+from discord import channel
 from discord.ext import commands
+from utils.logging_utils import send_log
 
 
 class Moderation(commands.Cog):
@@ -125,6 +127,37 @@ class Moderation(commands.Cog):
                 f"({interaction.user.id})"
             ),
         )
+        log_embed = discord.Embed(
+    title="🧹 Üzenetek törölve",
+    color=discord.Color.orange(),
+    timestamp=discord.utils.utcnow(),
+    )
+
+        log_embed.add_field(
+            name="Moderátor",
+            value=(
+                f"{interaction.user.mention}\n"
+                f"`{interaction.user.id}`"
+                ),
+            inline=True,
+            )
+
+        log_embed.add_field(
+            name="Csatorna",
+            value=channel.mention,
+            inline=True,
+            )
+
+        log_embed.add_field(
+            name="Törölt üzenetek",
+            value=str(len(torolt_uzenetek)),
+            inline=True,
+            )
+
+        await send_log(
+            guild=channel.guild,
+            embed=log_embed,
+            )
 
         await interaction.followup.send(
             f"✅ **{len(torolt_uzenetek)}** üzenet törölve.",
@@ -172,6 +205,37 @@ class Moderation(commands.Cog):
                 f"({interaction.user.id})"
             )
         )
+        log_embed = discord.Embed(
+            title="👢 Tag kirúgva",
+            color=discord.Color.orange(),
+            timestamp=discord.utils.utcnow(),
+            )
+
+        log_embed.add_field(
+            name="Tag",
+            value=f"{member}\n`{member.id}`",
+            inline=True,
+            )
+
+        log_embed.add_field(
+            name="Moderátor",
+            value=(
+                f"{interaction.user.mention}\n"
+                f"`{interaction.user.id}`"
+            ),
+            inline=True,
+            )
+
+        log_embed.add_field(
+            name="Indok",
+            value=indok,
+            inline=False,
+)
+
+        await send_log(
+            guild=member.guild,
+            embed=log_embed,
+)
 
         await interaction.followup.send(
             f"✅ {member.mention} kirúgva.\n"
@@ -225,6 +289,43 @@ class Moderation(commands.Cog):
             ),
             delete_message_seconds=0,
         )
+        log_embed = discord.Embed(
+    title="🔨 Tag kitiltva",
+    color=discord.Color.red(),
+    timestamp=discord.utils.utcnow(),
+)
+
+        log_embed.add_field(
+            name="Tag",
+            value=f"{member}\n`{member.id}`",
+            inline=True,
+            )
+
+        log_embed.add_field(
+            name="Moderátor",
+            value=(
+                f"{interaction.user.mention}\n"
+                f"`{interaction.user.id}`"
+                ),
+            inline=True,
+)
+
+        log_embed.add_field(
+            name="Indok",
+            value=indok,
+            inline=False,
+        )
+
+        await send_log(
+            guild=member.guild,
+            embed=log_embed,
+        )
+
+
+        await send_log(
+            guild=member.guild,
+            embed=log_embed,
+)
 
         await interaction.followup.send(
             f"✅ **{member}** kitiltva.\n"
@@ -276,6 +377,46 @@ class Moderation(commands.Cog):
                 f"({interaction.user.id})"
             ),
         )
+        log_embed = discord.Embed(
+    title="⏳ Tag felfüggesztve",
+    color=discord.Color.orange(),
+    timestamp=discord.utils.utcnow(),
+)
+
+        log_embed.add_field(
+            name="Tag",
+            value=(
+                f"{member.mention}\n"
+                f"`{member.id}`"
+            ),
+            inline=True,
+)
+
+        log_embed.add_field(
+            name="Moderátor",
+            value=(
+                f"{interaction.user.mention}\n"
+                f"`{interaction.user.id}`"
+            ),
+            inline=True,
+)
+
+        log_embed.add_field(
+            name="Időtartam",
+            value=f"{percek} perc",
+            inline=True,
+)
+
+        log_embed.add_field(
+            name="Indok",
+            value=indok,
+            inline=False,
+)
+
+        await send_log(
+            guild=member.guild,
+            embed=log_embed,
+)
 
         await interaction.followup.send(
             f"✅ {member.mention} felfüggesztve "
@@ -326,6 +467,40 @@ class Moderation(commands.Cog):
                 f"({interaction.user.id})"
             ),
         )
+        log_embed = discord.Embed(
+    title="✅ Felfüggesztés megszüntetve",
+    color=discord.Color.green(),
+    timestamp=discord.utils.utcnow(),
+)
+
+        log_embed.add_field(
+            name="Tag",
+            value=(
+                f"{member.mention}\n"
+                f"`{member.id}`"
+            ),
+            inline=True,
+)
+
+        log_embed.add_field(
+            name="Moderátor",
+            value=(
+                f"{interaction.user.mention}\n"
+                f"`{interaction.user.id}`"
+            ),
+            inline=True,
+)
+
+        log_embed.add_field(
+            name="Indok",
+            value=indok,
+            inline=False,
+)
+
+        await send_log(
+            guild=member.guild,
+            embed=log_embed,
+)
 
         await interaction.followup.send(
             f"✅ {member.mention} felfüggesztése megszüntetve.",

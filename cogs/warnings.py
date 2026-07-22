@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import discord
 from discord import app_commands
 from discord.ext import commands
+from utils.logging_utils import send_log
 
 from database.db import (
     add_warning,
@@ -155,6 +156,50 @@ class WarningSystem(commands.Cog):
             interaction.guild.id,
             member.id,
         )
+        log_embed = discord.Embed(
+            title="⚠️ Tag figyelmeztetve",
+            color=discord.Color.orange(),
+            timestamp=discord.utils.utcnow(),
+)
+
+        log_embed.add_field(
+            name="Tag",
+            value=(
+                f"{member.mention}\n"
+                f"`{member.id}`"
+            ),
+            inline=True,
+)
+
+        log_embed.add_field(
+            name="Moderátor",
+            value=(
+                f"{interaction.user.mention}\n"
+                f"`{interaction.user.id}`"
+            ),
+            inline=True,
+)
+
+        log_embed.add_field(
+            name="Figyelmeztetés ID",
+            value=f"`{warning_id}`",
+            inline=True,
+)
+
+        log_embed.add_field(
+            name="Indok",
+            value=reason,
+            inline=False,
+)
+
+        log_embed.set_footer(
+            text=f"Összes figyelmeztetés: {total}"
+)
+
+        await send_log(
+            guild=interaction.guild,
+            embed=log_embed,
+)
 
         embed = discord.Embed(
             title="⚠️ Figyelmeztetés rögzítve",
@@ -312,6 +357,40 @@ class WarningSystem(commands.Cog):
                 ephemeral=True,
             )
             return
+        log_embed = discord.Embed(
+    title="🗑️ Figyelmeztetés törölve",
+    color=discord.Color.green(),
+    timestamp=discord.utils.utcnow(),
+)
+
+        log_embed.add_field(
+            name="Figyelmeztetés ID",
+            value=f"`{warning_id}`",
+            inline=True,
+)
+
+        log_embed.add_field(
+            name="Érintett tag",
+            value=f"<@{deleted_record['user_id']}>",
+            inline=True,
+)
+
+        log_embed.add_field(
+            name="Törölte",
+            value=interaction.user.mention,
+            inline=True,
+)
+
+        log_embed.add_field(
+            name="Korábbi indok",
+            value=str(deleted_record["reason"]),
+                inline=False,
+)
+
+        await send_log(
+            guild=interaction.guild,
+            embed=log_embed,
+)
 
         await interaction.response.send_message(
             (

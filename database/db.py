@@ -18,6 +18,7 @@ async def init_database() -> None:
     """
 
     async with aiosqlite.connect(DATABASE_PATH) as db:
+        # Figyelmeztetések
         await db.execute(
             """
             CREATE TABLE IF NOT EXISTS warnings (
@@ -36,6 +37,31 @@ async def init_database() -> None:
             CREATE INDEX IF NOT EXISTS
             idx_warnings_guild_user
             ON warnings (guild_id, user_id)
+            """
+        )
+
+        # Általános szerverbeállítások
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS guild_settings (
+                guild_id INTEGER NOT NULL,
+                setting_key TEXT NOT NULL,
+                setting_value TEXT NOT NULL,
+
+                PRIMARY KEY (guild_id, setting_key)
+            )
+            """
+        )
+
+        # Staffként kezelt Discord-rangok
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS staff_roles (
+                guild_id INTEGER NOT NULL,
+                role_id INTEGER NOT NULL,
+
+                PRIMARY KEY (guild_id, role_id)
+            )
             """
         )
 
@@ -203,3 +229,191 @@ async def delete_warning(
         await db.commit()
 
         return dict(row)
+async def set_guild_setting(
+    guild_id: int,
+    setting_key: str,
+    setting_value: str | None,
+) -> None:
+    """
+    Elment vagy töröl egy szerverbeállítást.
+    """
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        if setting_value is None:
+            await db.execute(
+                """
+                DELETE FROM guild_settings
+                WHERE guild_id = ?
+                  AND setting_key = ?
+                """,
+                (
+                    guild_id,
+                    setting_key,
+                ),
+            )
+        else:
+            await db.execute(
+                """
+                INSERT INTO guild_settings (
+                    guild_id,
+                    setting_key,
+                    setting_value
+                )
+                VALUES (?, ?, ?)
+                ON CONFLICT (guild_id, setting_key)
+                DO UPDATE SET
+                    setting_value = excluded.setting_value
+                """,
+                (
+                    guild_id,
+                    setting_key,
+                    setting_value,
+                ),
+            )
+
+        # Ennek az async with blokkon BELÜL kell lennie.
+        await db.commit()
+
+
+async def get_guild_setting(
+    guild_id: int,
+    setting_key: str,
+) -> str | None:
+    """
+    Lekér egyetlen szerverbeállítást.
+    """
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        async with db.execute(
+            """
+            SELECT setting_value
+            FROM guild_settings
+            WHERE guild_id = ?
+              AND setting_key = ?
+            """,
+            (
+                guild_id,
+                setting_key,
+            ),
+        ) as cursor:
+            row = await cursor.fetchone()
+
+        if row is None:
+            return None
+
+        return str(row[0])
+
+
+async def get_guild_settings(
+    guild_id: int,
+) -> dict[str, str]:
+    """
+    Lekéri a szerver összes általános beállítását.
+    """
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        async with db.execute(
+            """
+            SELECT setting_key, setting_value
+            FROM guild_settings
+            WHERE guild_id = ?
+            """,
+            (guild_id,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+
+    return {
+        str(row[0]): str(row[1])
+        for row in rows
+    }
+
+
+async def add_staff_role(
+    guild_id: int,
+    role_id: int,
+) -> bool:
+    """
+    Staffrangot ad a szerver beállításaihoz.
+
+    True: új rang került be.
+    False: már korábban is szerepelt.
+    """
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            """
+            INSERT OR IGNORE INTO staff_roles (
+                guild_id,
+                role_id
+            )
+            VALUES (?, ?)
+            """,
+            (
+                guild_id,
+                role_id,
+            ),
+        )
+
+        await db.commit()
+
+        added = cursor.rowcount > 0
+        await cursor.close()
+
+        return added
+
+
+async def remove_staff_role(
+    guild_id: int,
+    role_id: int,
+) -> bool:
+    """
+    Eltávolít egy staffrangot.
+
+    True: sikerült törölni.
+    False: nem volt beállítva.
+    """
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            """
+            DELETE FROM staff_roles
+            WHERE guild_id = ?
+              AND role_id = ?
+            """,
+            (
+                guild_id,
+                role_id,
+            ),
+        )
+
+        await db.commit()
+
+        removed = cursor.rowcount > 0
+        await cursor.close()
+
+        return removed
+
+
+async def get_staff_roles(
+    guild_id: int,
+) -> list[int]:
+    """
+    Lekéri a szerver staffrangjainak azonosítóit.
+    """
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        async with db.execute(
+            """
+            SELECT role_id
+            FROM staff_roles
+            WHERE guild_id = ?
+            ORDER BY role_id
+            """,
+            (guild_id,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+
+    return [
+        int(row[0])
+        for row in rows
+    ]
