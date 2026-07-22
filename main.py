@@ -5,13 +5,14 @@ from discord.ext import commands
 from dotenv import load_dotenv
 
 
-# Beolvassa a .env fájl tartalmát.
+# --------------------------------------------------
+# Token betöltése
+# --------------------------------------------------
+
 load_dotenv()
 
-# Kiveszi belőle a bot tokenjét.
 TOKEN = os.getenv("DISCORD_TOKEN")
 
-# Ha nem talál tokent, érthető hibával leáll.
 if not TOKEN:
     raise RuntimeError(
         "Nem található a DISCORD_TOKEN!\n"
@@ -19,44 +20,52 @@ if not TOKEN:
     )
 
 
-# Meghatározzuk, milyen Discord-eseményeket figyelhet a bot.
+# --------------------------------------------------
+# Discord intentek
+# --------------------------------------------------
+
 intents = discord.Intents.default()
-
-# Belépés, kilépés és tagkezelés miatt kell.
 intents.members = True
-
-# Üzenetfigyelés és a későbbi automoderáció miatt kell.
 intents.message_content = True
 
 
+# --------------------------------------------------
+# Saját bot osztály
+# --------------------------------------------------
+
 class ServerBot(commands.Bot):
+    def __init__(self) -> None:
+        super().__init__(
+            command_prefix="!",
+            intents=intents,
+            help_command=None,
+        )
+
     async def setup_hook(self) -> None:
         """
-        A bot indulásakor szinkronizálja
-        a Discord slash parancsait.
+        Betölti a modulokat, majd szinkronizálja
+        a slash parancsokat.
         """
 
-        parancsok = await self.tree.sync()
+        await self.load_extension("cogs.utility")
+        print("Modul betöltve: cogs.utility")
+
+        synced_commands = await self.tree.sync()
 
         print(
-            f"{len(parancsok)} slash parancs szinkronizálva."
+            f"{len(synced_commands)} slash parancs szinkronizálva."
         )
 
 
-bot = ServerBot(
-    command_prefix="!",
-    intents=intents,
-    help_command=None,
-)
+bot = ServerBot()
 
+
+# --------------------------------------------------
+# Bot elindulási eseménye
+# --------------------------------------------------
 
 @bot.event
 async def on_ready() -> None:
-    """
-    Akkor fut le, amikor a bot sikeresen
-    csatlakozott a Discordhoz.
-    """
-
     if bot.user is None:
         return
 
@@ -68,43 +77,15 @@ async def on_ready() -> None:
     print("-----------------------------------")
 
     await bot.change_presence(
-        activity=discord.Game(name="/ping | Fejlesztés alatt")
+        status=discord.Status.online,
+        activity=discord.Game(
+            name="/ping | Fejlesztés alatt"
+        ),
     )
 
 
-@bot.tree.command(
-    name="ping",
-    description="Megmutatja a bot válaszidejét.",
-)
-async def slash_ping(
-    interaction: discord.Interaction,
-) -> None:
-    válaszidő = round(bot.latency * 1000)
-
-    embed = discord.Embed(
-        title="🏓 Pong!",
-        description=f"Válaszidő: **{válaszidő} ms**",
-        color=discord.Color.green(),
-    )
-
-    await interaction.response.send_message(
-        embed=embed,
-        ephemeral=True,
-    )
-
-
-@bot.command(name="ping")
-async def szöveges_ping(ctx: commands.Context) -> None:
-    """
-    Ideiglenes !ping parancs arra az esetre,
-    ha a /ping még nem jelent meg.
-    """
-
-    válaszidő = round(bot.latency * 1000)
-
-    await ctx.send(
-        f"🏓 Pong! Válaszidő: **{válaszidő} ms**"
-    )
-
+# --------------------------------------------------
+# Bot indítása
+# --------------------------------------------------
 
 bot.run(TOKEN)
