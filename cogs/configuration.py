@@ -300,8 +300,275 @@ class Configuration(
             "✅ A naplózási csatorna kikapcsolva.",
             ephemeral=True,
         )
+        
+        # --------------------------------------------------
+    # /config welcome-channel
+    # --------------------------------------------------
+
+    @app_commands.command(
+        name="welcome-channel",
+        description="Beállítja az üdvözlőüzenetek csatornáját.",
+    )
+    @app_commands.describe(
+        channel="A csatorna, ahová az üdvözlőüzenetek kerülnek.",
+    )
+    async def welcome_channel(
+        self,
+        interaction: discord.Interaction,
+        channel: discord.TextChannel,
+    ) -> None:
+        guild = interaction.guild
+
+        if guild is None:
+            return
+
+        bot_member = guild.me
+
+        if bot_member is None:
+            await interaction.response.send_message(
+                "❌ Nem sikerült lekérni a botot.",
+                ephemeral=True,
+            )
+            return
+
+        permissions = channel.permissions_for(bot_member)
+
+        if not (
+            permissions.view_channel
+            and permissions.send_messages
+            and permissions.embed_links
+        ):
+            await interaction.response.send_message(
+                "❌ A botnak nincs jogosultsága üzenetet "
+                f"küldeni a(z) {channel.mention} csatornába.",
+                ephemeral=True,
+            )
+            return
+
+        await set_guild_setting(
+            guild_id=guild.id,
+            setting_key="welcome_channel_id",
+            setting_value=str(channel.id),
+        )
+
+        await interaction.response.send_message(
+            f"✅ Üdvözlőcsatorna beállítva: {channel.mention}",
+            ephemeral=True,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
 
     # --------------------------------------------------
+    # /config welcome-disable
+    # --------------------------------------------------
+
+    @app_commands.command(
+        name="welcome-disable",
+        description="Kikapcsolja az üdvözlőüzeneteket.",
+    )
+    async def welcome_disable(
+        self,
+        interaction: discord.Interaction,
+    ) -> None:
+        if interaction.guild is None:
+            return
+
+        await set_guild_setting(
+            guild_id=interaction.guild.id,
+            setting_key="welcome_channel_id",
+            setting_value=None,
+        )
+
+        await interaction.response.send_message(
+            "✅ Az üdvözlőüzenetek kikapcsolva.",
+            ephemeral=True,
+        )
+
+    # --------------------------------------------------
+    # /config goodbye-channel
+    # --------------------------------------------------
+
+    @app_commands.command(
+        name="goodbye-channel",
+        description="Beállítja a búcsúüzenetek csatornáját.",
+    )
+    @app_commands.describe(
+        channel="A csatorna, ahová a búcsúüzenetek kerülnek.",
+    )
+    async def goodbye_channel(
+        self,
+        interaction: discord.Interaction,
+        channel: discord.TextChannel,
+    ) -> None:
+        guild = interaction.guild
+
+        if guild is None:
+            return
+
+        bot_member = guild.me
+
+        if bot_member is None:
+            await interaction.response.send_message(
+                "❌ Nem sikerült lekérni a botot.",
+                ephemeral=True,
+            )
+            return
+
+        permissions = channel.permissions_for(bot_member)
+
+        if not (
+            permissions.view_channel
+            and permissions.send_messages
+            and permissions.embed_links
+        ):
+            await interaction.response.send_message(
+                "❌ A botnak nincs jogosultsága üzenetet "
+                f"küldeni a(z) {channel.mention} csatornába.",
+                ephemeral=True,
+            )
+            return
+
+        await set_guild_setting(
+            guild_id=guild.id,
+            setting_key="goodbye_channel_id",
+            setting_value=str(channel.id),
+        )
+
+        await interaction.response.send_message(
+            f"✅ Búcsúcsatorna beállítva: {channel.mention}",
+            ephemeral=True,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+
+    # --------------------------------------------------
+    # /config goodbye-disable
+    # --------------------------------------------------
+
+    @app_commands.command(
+        name="goodbye-disable",
+        description="Kikapcsolja a búcsúüzeneteket.",
+    )
+    async def goodbye_disable(
+        self,
+        interaction: discord.Interaction,
+    ) -> None:
+        if interaction.guild is None:
+            return
+
+        await set_guild_setting(
+            guild_id=interaction.guild.id,
+            setting_key="goodbye_channel_id",
+            setting_value=None,
+        )
+
+        await interaction.response.send_message(
+            "✅ A búcsúüzenetek kikapcsolva.",
+            ephemeral=True,
+        )
+
+    # --------------------------------------------------
+    # /config autorole
+    # --------------------------------------------------
+
+    @app_commands.command(
+        name="autorole",
+        description="Beállítja a belépéskor automatikusan kiosztott rangot.",
+    )
+    @app_commands.describe(
+        role="A belépő tagoknak automatikusan kiosztott rang.",
+    )
+    async def autorole(
+        self,
+        interaction: discord.Interaction,
+        role: discord.Role,
+    ) -> None:
+        guild = interaction.guild
+
+        if guild is None:
+            return
+
+        if role.is_default():
+            await interaction.response.send_message(
+                "❌ Az @everyone rang nem választható.",
+                ephemeral=True,
+            )
+            return
+
+        if role.managed:
+            await interaction.response.send_message(
+                "❌ Bothoz vagy integrációhoz tartozó rang "
+                "nem választható.",
+                ephemeral=True,
+            )
+            return
+
+        if role.permissions.administrator:
+            await interaction.response.send_message(
+                "❌ Biztonsági okból rendszergazda-jogosultságú "
+                "rang nem állítható be automatikus rangként.",
+                ephemeral=True,
+            )
+            return
+
+        bot_member = guild.me
+
+        if bot_member is None:
+            await interaction.response.send_message(
+                "❌ Nem sikerült lekérni a botot.",
+                ephemeral=True,
+            )
+            return
+
+        if role >= bot_member.top_role:
+            await interaction.response.send_message(
+                "❌ A kiválasztott rang a bot rangjával azonos "
+                "szinten vagy afölött van.\n"
+                "Húzd a bot rangját a kiosztandó rang fölé.",
+                ephemeral=True,
+            )
+            return
+
+        await set_guild_setting(
+            guild_id=guild.id,
+            setting_key="autorole_id",
+            setting_value=str(role.id),
+        )
+
+        await interaction.response.send_message(
+            f"✅ Automatikus alaprang beállítva: {role.mention}",
+            ephemeral=True,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+
+    # --------------------------------------------------
+    # /config autorole-disable
+    # --------------------------------------------------
+
+    @app_commands.command(
+        name="autorole-disable",
+        description="Kikapcsolja az automatikus rangkiosztást.",
+    )
+    async def autorole_disable(
+        self,
+        interaction: discord.Interaction,
+    ) -> None:
+        if interaction.guild is None:
+            return
+
+        await set_guild_setting(
+            guild_id=interaction.guild.id,
+            setting_key="autorole_id",
+            setting_value=None,
+        )
+
+        await interaction.response.send_message(
+            "✅ Az automatikus rangkiosztás kikapcsolva.",
+            ephemeral=True,
+        )
+    # --------------------------------------------------
+    # /config show
+    # --------------------------------------------------
+
+       # --------------------------------------------------
     # /config show
     # --------------------------------------------------
 
@@ -321,26 +588,37 @@ class Configuration(
         settings = await get_guild_settings(guild.id)
         staff_role_ids = await get_staff_roles(guild.id)
 
-        log_channel_text = "Nincs beállítva"
+        def get_channel_text(setting_key: str) -> str:
+            channel_id = settings.get(setting_key)
 
-        log_channel_id = settings.get("log_channel_id")
+            if channel_id is None:
+                return "Nincs beállítva"
 
-        if log_channel_id is not None:
             try:
-                channel = guild.get_channel(
-                    int(log_channel_id)
-                )
-
-                if channel is None:
-                    log_channel_text = (
-                        f"Törölt vagy nem elérhető csatorna "
-                        f"(`{log_channel_id}`)"
-                    )
-                else:
-                    log_channel_text = channel.mention
-
+                channel = guild.get_channel(int(channel_id))
             except ValueError:
-                log_channel_text = "Hibás csatornaazonosító"
+                return "Hibás csatornaazonosító"
+
+            if channel is None:
+                return f"Törölt csatorna (`{channel_id}`)"
+
+            return channel.mention
+
+        def get_role_text(setting_key: str) -> str:
+            role_id = settings.get(setting_key)
+
+            if role_id is None:
+                return "Nincs beállítva"
+
+            try:
+                role = guild.get_role(int(role_id))
+            except ValueError:
+                return "Hibás rangazonosító"
+
+            if role is None:
+                return f"Törölt rang (`{role_id}`)"
+
+            return role.mention
 
         staff_role_lines: list[str] = []
 
@@ -349,26 +627,22 @@ class Configuration(
 
             if role is None:
                 staff_role_lines.append(
-                    f"Törölt rang (`{role_id}`)"
+                    f"• Törölt rang (`{role_id}`)"
                 )
             else:
                 staff_role_lines.append(
-                    role.mention
+                    f"• {role.mention}"
                 )
 
         if staff_role_lines:
-            staff_roles_text = "\n".join(
-                f"• {role_text}"
-                for role_text in staff_role_lines
-            )
+            staff_roles_text = "\n".join(staff_role_lines)
         else:
             staff_roles_text = "Nincs beállítva"
 
         embed = discord.Embed(
             title="⚙️ Szerverbeállítások",
             description=(
-                "Itt láthatók a bot jelenlegi "
-                "szerverenkénti beállításai."
+                "A bot jelenlegi Discordon beállított értékei."
             ),
             color=discord.Color.blue(),
         )
@@ -380,8 +654,26 @@ class Configuration(
         )
 
         embed.add_field(
-            name="📜 Naplózási csatorna",
-            value=log_channel_text,
+            name="📜 Logcsatorna",
+            value=get_channel_text("log_channel_id"),
+            inline=False,
+        )
+
+        embed.add_field(
+            name="👋 Üdvözlőcsatorna",
+            value=get_channel_text("welcome_channel_id"),
+            inline=False,
+        )
+
+        embed.add_field(
+            name="🚪 Búcsúcsatorna",
+            value=get_channel_text("goodbye_channel_id"),
+            inline=False,
+        )
+
+        embed.add_field(
+            name="🎭 Automatikus alaprang",
+            value=get_role_text("autorole_id"),
             inline=False,
         )
 
@@ -394,7 +686,6 @@ class Configuration(
             ephemeral=True,
             allowed_mentions=discord.AllowedMentions.none(),
         )
-
     # --------------------------------------------------
     # Hibakezelés
     # --------------------------------------------------
@@ -434,3 +725,4 @@ class Configuration(
 
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(Configuration(bot))
+    
