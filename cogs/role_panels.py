@@ -841,16 +841,20 @@ class RolePanels(
         interaction: discord.Interaction,
         error: app_commands.AppCommandError,
     ) -> None:
+        if isinstance(error, app_commands.CheckFailure):
+            return
+
         if isinstance(
             error,
             app_commands.MissingPermissions,
         ):
             await self.send_error(
                 interaction,
-                "❌ A rangpanelek kezeléséhez "
-                "Rangok kezelése jogosultság szükséges.",
+                "❌ Nincs megfelelő jogosultságod.",
             )
             return
+
+        # Az alatta lévő régi hibakezelő kód marad.
 
         original_error = getattr(
             error,

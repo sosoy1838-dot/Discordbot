@@ -123,6 +123,42 @@ async def init_database() -> None:
             )
             """
         )
+                # Ticketek
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS tickets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id INTEGER NOT NULL,
+                channel_id INTEGER NOT NULL UNIQUE,
+                opener_id INTEGER NOT NULL,
+                status TEXT NOT NULL DEFAULT 'open',
+                claimed_by INTEGER,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                closed_at TEXT
+            )
+            """
+        )
+
+        await db.execute(
+            """
+            CREATE INDEX IF NOT EXISTS
+            idx_tickets_guild_opener_status
+            ON tickets (
+                guild_id,
+                opener_id,
+                status
+            )
+            """
+        )
+
+        await db.execute(
+            """
+            CREATE INDEX IF NOT EXISTS
+            idx_tickets_channel
+            ON tickets (channel_id)
+            """
+        )
+
         await db.commit()
 
 
@@ -866,3 +902,181 @@ async def get_bot_manager_roles(
             rows = await cursor.fetchall()
 
     return [int(row[0]) for row in rows]
+async def create_ticket(
+    guild_id: int,
+    channel_id: int,
+    opener_id: int,
+) -> int:
+    """
+    Elment egy új ticketet, és visszaadja
+    az adatbázisbeli ticketazonosítót.
+    """
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            """
+            INSERT INTO tickets (
+                guild_id,
+                channel_id,
+                opener_id,
+                status
+            )
+            VALUES (?, ?, ?, 'open')
+            """,
+            (
+                guild_id,
+                channel_id,
+                opener_id,
+            ),
+        )
+
+        await db.commit()
+
+        ticket_id = cursor.lastrowid
+        await cursor.close()
+
+        if ticket_id is None:
+            raise RuntimeError(
+                "Nem sikerült elmenteni a ticketet."
+            )
+
+        return ticket_id
+
+
+async def get_open_ticket_for_user(
+    guild_id: int,
+    opener_id: int,
+) -> dict | None:
+    """
+    Megkeresi a felhasználó jelenleg nyitott ticketjét.
+    """
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+
+        async with db.execute(
+            """
+            SELECT
+                id,
+                guild_id,
+                channel_id,
+                opener_id,
+                status,
+                claimed_by,
+                created_at,
+                closed_at
+            FROM tickets
+            WHERE guild_id = ?
+              AND opener_id = ?
+              AND status = 'open'
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (
+                guild_id,
+                opener_id,
+            ),
+        ) as cursor:
+            row = await cursor.fetchone()
+
+    if row is None:
+        return None
+
+    return dict(row)
+
+
+async def get_ticket_by_channel(
+    channel_id: int,
+) -> dict | None:
+    """
+    Lekéri a ticketet a Discord-csatornája alapján.
+    """
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+
+        async with db.execute(
+            """
+            SELECT
+                id,
+                guild_id,
+                channel_id,
+                opener_id,
+                status,
+                claimed_by,
+                created_at,
+                closed_at
+            FROM tickets
+            WHERE channel_id = ?
+            LIMIT 1
+            """,
+            (channel_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+
+    if row is None:
+        return None
+
+    return dict(row)
+
+
+async def claim_ticket(
+    channel_id: int,
+    staff_id: int,
+) -> bool:
+    """
+    Egy stafftaghoz rendeli a ticketet.
+
+    Csak akkor sikerül, ha a ticket nyitott,
+    és még senki nem claimelte.
+    """
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            """
+            UPDATE tickets
+            SET claimed_by = ?
+            WHERE channel_id = ?
+              AND status = 'open'
+              AND claimed_by IS NULL
+            """,
+            (
+                staff_id,
+                channel_id,
+            ),
+        )
+
+        await db.commit()
+
+        updated = cursor.rowcount > 0
+        await cursor.close()
+
+        return updated
+
+
+async def close_ticket(
+    channel_id: int,
+) -> bool:
+    """
+    Lezártként jelöli meg a ticketet.
+    """
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            """
+            UPDATE tickets
+            SET
+                status = 'closed',
+                closed_at = CURRENT_TIMESTAMP
+            WHERE channel_id = ?
+              AND status = 'open'
+            """,
+            (channel_id,),
+        )
+
+        await db.commit()
+
+        updated = cursor.rowcount > 0
+        await cursor.close()
+
+        return updated

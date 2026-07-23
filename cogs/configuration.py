@@ -1,3 +1,5 @@
+from copy import error
+
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -739,6 +741,166 @@ class Configuration(
             ephemeral=True,
             allowed_mentions=discord.AllowedMentions.none(),
         )
+            # --------------------------------------------------
+    # /config ticket-category
+    # --------------------------------------------------
+
+    @app_commands.command(
+        name="ticket-category",
+        description="Beállítja, melyik kategóriába kerüljenek a ticketek.",
+    )
+    @app_commands.describe(
+        category="A ticketcsatornák kategóriája.",
+    )
+    async def ticket_category(
+        self,
+        interaction: discord.Interaction,
+        category: discord.CategoryChannel,
+    ) -> None:
+        guild = interaction.guild
+
+        if guild is None:
+            return
+
+        bot_member = guild.me
+
+        if bot_member is None:
+            await interaction.response.send_message(
+                "❌ Nem sikerült lekérni a botot.",
+                ephemeral=True,
+            )
+            return
+
+        if not bot_member.guild_permissions.manage_channels:
+            await interaction.response.send_message(
+                "❌ A botnak nincs Csatornák kezelése jogosultsága.",
+                ephemeral=True,
+            )
+            return
+
+        await set_guild_setting(
+            guild_id=guild.id,
+            setting_key="ticket_category_id",
+            setting_value=str(category.id),
+        )
+
+        await interaction.response.send_message(
+            (
+                "✅ A ticketkategória beállítva: "
+                f"**{category.name}**"
+            ),
+            ephemeral=True,
+        )
+
+    # --------------------------------------------------
+    # /config ticket-log-channel
+    # --------------------------------------------------
+
+    @app_commands.command(
+        name="ticket-log-channel",
+        description="Beállítja a ticketnaplók csatornáját.",
+    )
+    @app_commands.describe(
+        channel="A ticketnapló és az átiratok csatornája.",
+    )
+    async def ticket_log_channel(
+        self,
+        interaction: discord.Interaction,
+        channel: discord.TextChannel,
+    ) -> None:
+        guild = interaction.guild
+
+        if guild is None:
+            return
+
+        bot_member = guild.me
+
+        if bot_member is None:
+            await interaction.response.send_message(
+                "❌ Nem sikerült lekérni a botot.",
+                ephemeral=True,
+            )
+            return
+
+        permissions = channel.permissions_for(bot_member)
+
+        missing_permissions: list[str] = []
+
+        if not permissions.view_channel:
+            missing_permissions.append("Csatorna megtekintése")
+
+        if not permissions.send_messages:
+            missing_permissions.append("Üzenetek küldése")
+
+        if not permissions.embed_links:
+            missing_permissions.append("Hivatkozások beágyazása")
+
+        if not permissions.attach_files:
+            missing_permissions.append("Fájlok csatolása")
+
+        if missing_permissions:
+            permission_text = "\n".join(
+                f"• {permission}"
+                for permission in missing_permissions
+            )
+
+            await interaction.response.send_message(
+                (
+                    "❌ A botnak hiányoznak ezek a jogosultságai "
+                    f"a(z) {channel.mention} csatornában:\n"
+                    f"{permission_text}"
+                ),
+                ephemeral=True,
+            )
+            return
+
+        await set_guild_setting(
+            guild_id=guild.id,
+            setting_key="ticket_log_channel_id",
+            setting_value=str(channel.id),
+        )
+
+        await interaction.response.send_message(
+            f"✅ Ticketnapló-csatorna beállítva: {channel.mention}",
+            ephemeral=True,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+
+    # --------------------------------------------------
+    # /config ticket-disable
+    # --------------------------------------------------
+
+    @app_commands.command(
+        name="ticket-disable",
+        description="Kikapcsolja és törli a ticket alapbeállításait.",
+    )
+    async def ticket_disable(
+        self,
+        interaction: discord.Interaction,
+    ) -> None:
+        guild = interaction.guild
+
+        if guild is None:
+            return
+
+        setting_keys = (
+            "ticket_category_id",
+            "ticket_log_channel_id",
+            "ticket_panel_channel_id",
+            "ticket_panel_message_id",
+        )
+
+        for setting_key in setting_keys:
+            await set_guild_setting(
+                guild_id=guild.id,
+                setting_key=setting_key,
+                setting_value=None,
+            )
+
+        await interaction.response.send_message(
+            "✅ A ticket rendszer beállításai kikapcsolva.",
+            ephemeral=True,
+        )
        # --------------------------------------------------
     # /config show
     # --------------------------------------------------
@@ -851,6 +1013,17 @@ class Configuration(
         embed.set_footer(
             text=f"Szerver: {guild.name}"
         )
+        embed.add_field(
+            name="🎫 Ticketkategória",
+            value=get_channel_text("ticket_category_id"),
+            inline=False,
+        )
+
+        embed.add_field(
+            name="🗃️ Ticketnapló",
+            value=get_channel_text("ticket_log_channel_id"),
+            inline=False,
+        )
 
         await interaction.response.send_message(
             embed=embed,
@@ -866,16 +1039,20 @@ class Configuration(
         interaction: discord.Interaction,
         error: app_commands.AppCommandError,
     ) -> None:
+        if isinstance(error, app_commands.CheckFailure):
+            return
+
         if isinstance(
             error,
             app_commands.MissingPermissions,
         ):
             await self.send_error(
                 interaction,
-                "❌ A konfiguráció kezeléséhez "
-                "Szerver kezelése jogosultság szükséges.",
+                "❌ Nincs megfelelő jogosultságod.",
             )
             return
+
+        # Az alatta lévő régi hibakezelő kód marad.
 
         original_error = getattr(
             error,
