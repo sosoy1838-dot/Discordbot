@@ -158,7 +158,31 @@ async def init_database() -> None:
             ON tickets (channel_id)
             """
         )
+                # Staff-ping védelem alól kivételes rangok
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS staff_ping_exempt_roles (
+                guild_id INTEGER NOT NULL,
+                role_id INTEGER NOT NULL,
 
+                PRIMARY KEY (guild_id, role_id)
+            )
+            """
+        )
+
+        # Staff-ping védelem alól kivételes csatornák
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS staff_ping_exempt_channels (
+                guild_id INTEGER NOT NULL,
+                channel_id INTEGER NOT NULL,
+
+                PRIMARY KEY (guild_id, channel_id)
+            )
+            """
+        )
+
+        
         await db.commit()
 
 
@@ -1080,3 +1104,129 @@ async def close_ticket(
         await cursor.close()
 
         return updated
+async def add_staff_ping_exempt_role(
+    guild_id: int,
+    role_id: int,
+) -> bool:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            """
+            INSERT OR IGNORE INTO staff_ping_exempt_roles (
+                guild_id,
+                role_id
+            )
+            VALUES (?, ?)
+            """,
+            (guild_id, role_id),
+        )
+
+        await db.commit()
+
+        added = cursor.rowcount > 0
+        await cursor.close()
+
+        return added
+
+
+async def remove_staff_ping_exempt_role(
+    guild_id: int,
+    role_id: int,
+) -> bool:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            """
+            DELETE FROM staff_ping_exempt_roles
+            WHERE guild_id = ?
+              AND role_id = ?
+            """,
+            (guild_id, role_id),
+        )
+
+        await db.commit()
+
+        removed = cursor.rowcount > 0
+        await cursor.close()
+
+        return removed
+
+
+async def get_staff_ping_exempt_roles(
+    guild_id: int,
+) -> list[int]:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        async with db.execute(
+            """
+            SELECT role_id
+            FROM staff_ping_exempt_roles
+            WHERE guild_id = ?
+            ORDER BY role_id
+            """,
+            (guild_id,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+
+    return [int(row[0]) for row in rows]
+
+
+async def add_staff_ping_exempt_channel(
+    guild_id: int,
+    channel_id: int,
+) -> bool:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            """
+            INSERT OR IGNORE INTO staff_ping_exempt_channels (
+                guild_id,
+                channel_id
+            )
+            VALUES (?, ?)
+            """,
+            (guild_id, channel_id),
+        )
+
+        await db.commit()
+
+        added = cursor.rowcount > 0
+        await cursor.close()
+
+        return added
+
+
+async def remove_staff_ping_exempt_channel(
+    guild_id: int,
+    channel_id: int,
+) -> bool:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            """
+            DELETE FROM staff_ping_exempt_channels
+            WHERE guild_id = ?
+              AND channel_id = ?
+            """,
+            (guild_id, channel_id),
+        )
+
+        await db.commit()
+
+        removed = cursor.rowcount > 0
+        await cursor.close()
+
+        return removed
+
+
+async def get_staff_ping_exempt_channels(
+    guild_id: int,
+) -> list[int]:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        async with db.execute(
+            """
+            SELECT channel_id
+            FROM staff_ping_exempt_channels
+            WHERE guild_id = ?
+            ORDER BY channel_id
+            """,
+            (guild_id,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+
+    return [int(row[0]) for row in rows]
