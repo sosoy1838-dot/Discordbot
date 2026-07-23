@@ -18,6 +18,10 @@ from views.role_panel import (
     RoleToggleButton,
     role_has_dangerous_permissions,
 )
+from utils.bot_permissions import (
+    is_bot_manager,
+    send_manager_denied,
+)
 
 
 def build_panel_embed(
@@ -161,7 +165,6 @@ async def refresh_panel_message(
 
 
 @app_commands.guild_only()
-@app_commands.default_permissions(manage_roles=True)
 class RolePanels(
     commands.GroupCog,
     group_name="rolepanel",
@@ -218,17 +221,15 @@ class RolePanels(
         self,
         interaction: discord.Interaction,
     ) -> bool:
-        """
-        A panelkezelő parancsokhoz Rangok kezelése
-        jogosultság szükséges.
-        """
+            """
+            A rangpanelek kezelése csak botkezelőknek engedélyezett.
+            """
 
-        if not interaction.permissions.manage_roles:
-            raise app_commands.MissingPermissions(
-                ["manage_roles"]
-            )
+            if await is_bot_manager(interaction):
+                return True
 
-        return True
+            await send_manager_denied(interaction)
+            return False
 
     async def send_error(
         self,

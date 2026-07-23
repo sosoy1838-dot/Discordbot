@@ -3,16 +3,23 @@ from discord import app_commands
 from discord.ext import commands
 
 from database.db import (
+    add_bot_manager_role,
     add_staff_role,
+    get_bot_manager_roles,
     get_guild_settings,
     get_staff_roles,
+    remove_bot_manager_role,
     remove_staff_role,
     set_guild_setting,
+)
+from utils.bot_permissions import (
+    is_bot_manager,
+    is_owner_or_administrator,
+    send_manager_denied,
 )
 
 
 @app_commands.guild_only()
-@app_commands.default_permissions(manage_guild=True)
 class Configuration(
     commands.GroupCog,
     group_name="config",
@@ -29,17 +36,15 @@ class Configuration(
         self,
         interaction: discord.Interaction,
     ) -> bool:
-        """
-        A /config parancsokat csak olyan tag használhatja,
-        akinek van Szerver kezelése jogosultsága.
+            """
+        Minden /config alparancs előtt lefut.
         """
 
-        if not interaction.permissions.manage_guild:
-            raise app_commands.MissingPermissions(
-                ["manage_guild"]
-            )
+            if await is_bot_manager(interaction):
+                return True
 
-        return True
+            await send_manager_denied(interaction)
+            return False
 
     async def send_error(
         self,
@@ -564,10 +569,176 @@ class Configuration(
             "✅ Az automatikus rangkiosztás kikapcsolva.",
             ephemeral=True,
         )
-    # --------------------------------------------------
-    # /config show
+        
+   
+        # --------------------------------------------------
+    # /config manager-add
     # --------------------------------------------------
 
+    @app_commands.command(
+        name="manager-add",
+        description="Botkezelő rang hozzáadása.",
+    )
+    @app_commands.describe(
+        role="A rang, amely kezelheti a bot beállításait.",
+    )
+    async def manager_add(
+        self,
+        interaction: discord.Interaction,
+        role: discord.Role,
+    ) -> None:
+        guild = interaction.guild
+
+        if guild is None:
+            return
+
+        # Botkezelő rangokat csak tulajdonos vagy admin módosíthat.
+        if not await is_owner_or_administrator(interaction):
+            await interaction.response.send_message(
+                "❌ Botkezelő rangot csak a szervertulajdonos "
+                "vagy egy rendszergazda adhat hozzá.",
+                ephemeral=True,
+            )
+            return
+
+        if role.is_default():
+            await interaction.response.send_message(
+                "❌ Az @everyone rang nem lehet botkezelő.",
+                ephemeral=True,
+            )
+            return
+
+        if role.managed:
+            await interaction.response.send_message(
+                "❌ Bothoz vagy integrációhoz tartozó rang "
+                "nem választható.",
+                ephemeral=True,
+            )
+            return
+
+        added = await add_bot_manager_role(
+            guild_id=guild.id,
+            role_id=role.id,
+        )
+
+        if not added:
+            await interaction.response.send_message(
+                f"ℹ️ A(z) {role.mention} rang már botkezelő.",
+                ephemeral=True,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+            return
+
+        await interaction.response.send_message(
+            f"✅ A(z) {role.mention} rang hozzáadva "
+            "a botkezelő rangokhoz.",
+            ephemeral=True,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+
+    # --------------------------------------------------
+    # /config manager-remove
+    # --------------------------------------------------
+
+    @app_commands.command(
+        name="manager-remove",
+        description="Botkezelő rang eltávolítása.",
+    )
+    @app_commands.describe(
+        role="Az eltávolítandó botkezelő rang.",
+    )
+    async def manager_remove(
+        self,
+        interaction: discord.Interaction,
+        role: discord.Role,
+    ) -> None:
+        guild = interaction.guild
+
+        if guild is None:
+            return
+
+        if not await is_owner_or_administrator(interaction):
+            await interaction.response.send_message(
+                "❌ Botkezelő rangot csak a szervertulajdonos "
+                "vagy egy rendszergazda távolíthat el.",
+                ephemeral=True,
+            )
+            return
+
+        removed = await remove_bot_manager_role(
+            guild_id=guild.id,
+            role_id=role.id,
+        )
+
+        if not removed:
+            await interaction.response.send_message(
+                f"ℹ️ A(z) {role.mention} rang nincs "
+                "botkezelőként beállítva.",
+                ephemeral=True,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+            return
+
+        await interaction.response.send_message(
+            f"✅ A(z) {role.mention} rang eltávolítva "
+            "a botkezelők közül.",
+            ephemeral=True,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+
+    # --------------------------------------------------
+    # /config manager-list
+    # --------------------------------------------------
+
+    @app_commands.command(
+        name="manager-list",
+        description="Megmutatja a beállított botkezelő rangokat.",
+    )
+    async def manager_list(
+        self,
+        interaction: discord.Interaction,
+    ) -> None:
+        guild = interaction.guild
+
+        if guild is None:
+            return
+
+        role_ids = await get_bot_manager_roles(guild.id)
+
+        if not role_ids:
+            await interaction.response.send_message(
+                "ℹ️ Nincs külön botkezelő rang beállítva.\n"
+                "A szervertulajdonos és a rendszergazdák "
+                "ettől függetlenül használhatják a botot.",
+                ephemeral=True,
+            )
+            return
+
+        role_lines: list[str] = []
+
+        for role_id in role_ids:
+            role = guild.get_role(role_id)
+
+            if role is None:
+                role_lines.append(
+                    f"• Törölt rang (`{role_id}`)"
+                )
+            else:
+                role_lines.append(
+                    f"• {role.mention}"
+                )
+
+        embed = discord.Embed(
+            title="🔐 Botkezelő rangok",
+            description="\n".join(role_lines),
+            color=discord.Color.blue(),
+        )
+
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
        # --------------------------------------------------
     # /config show
     # --------------------------------------------------

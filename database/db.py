@@ -112,6 +112,17 @@ async def init_database() -> None:
             ON role_panel_buttons (panel_id)
             """
         )
+                # A bot konfigurálására jogosult rangok
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS bot_manager_roles (
+                guild_id INTEGER NOT NULL,
+                role_id INTEGER NOT NULL,
+
+                PRIMARY KEY (guild_id, role_id)
+            )
+            """
+        )
         await db.commit()
 
 
@@ -785,3 +796,73 @@ async def delete_role_panel(
         await db.commit()
 
         return True
+async def add_bot_manager_role(
+    guild_id: int,
+    role_id: int,
+) -> bool:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            """
+            INSERT OR IGNORE INTO bot_manager_roles (
+                guild_id,
+                role_id
+            )
+            VALUES (?, ?)
+            """,
+            (
+                guild_id,
+                role_id,
+            ),
+        )
+
+        # Az async with blokkon BELÜL kell lennie.
+        await db.commit()
+
+        added = cursor.rowcount > 0
+        await cursor.close()
+
+        return added
+
+
+async def remove_bot_manager_role(
+    guild_id: int,
+    role_id: int,
+) -> bool:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            """
+            DELETE FROM bot_manager_roles
+            WHERE guild_id = ?
+              AND role_id = ?
+            """,
+            (
+                guild_id,
+                role_id,
+            ),
+        )
+
+        # Az async with blokkon BELÜL kell lennie.
+        await db.commit()
+
+        removed = cursor.rowcount > 0
+        await cursor.close()
+
+        return removed
+
+
+async def get_bot_manager_roles(
+    guild_id: int,
+) -> list[int]:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        async with db.execute(
+            """
+            SELECT role_id
+            FROM bot_manager_roles
+            WHERE guild_id = ?
+            ORDER BY role_id
+            """,
+            (guild_id,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+
+    return [int(row[0]) for row in rows]
