@@ -64,7 +64,54 @@ async def init_database() -> None:
             )
             """
         )
+                # Rangválasztó panelek
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS role_panels (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id INTEGER NOT NULL,
+                channel_id INTEGER NOT NULL,
+                message_id INTEGER NOT NULL UNIQUE,
+                title TEXT NOT NULL,
+                description TEXT NOT NULL,
+                created_by INTEGER NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
 
+        # A panelekhez tartozó ranggombok
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS role_panel_buttons (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                panel_id INTEGER NOT NULL,
+                role_id INTEGER NOT NULL,
+                label TEXT NOT NULL,
+                emoji TEXT,
+                style INTEGER NOT NULL DEFAULT 2,
+                position INTEGER NOT NULL DEFAULT 0,
+
+                UNIQUE (panel_id, role_id)
+            )
+            """
+        )
+
+        await db.execute(
+            """
+            CREATE INDEX IF NOT EXISTS
+            idx_role_panels_guild
+            ON role_panels (guild_id)
+            """
+        )
+
+        await db.execute(
+            """
+            CREATE INDEX IF NOT EXISTS
+            idx_role_panel_buttons_panel
+            ON role_panel_buttons (panel_id)
+            """
+        )
         await db.commit()
 
 
@@ -417,3 +464,324 @@ async def get_staff_roles(
         int(row[0])
         for row in rows
     ]
+async def create_role_panel(
+    guild_id: int,
+    channel_id: int,
+    message_id: int,
+    title: str,
+    description: str,
+    created_by: int,
+) -> int:
+    """
+    Létrehoz egy rangválasztó panelt,
+    majd visszaadja a panel azonosítóját.
+    """
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            """
+            INSERT INTO role_panels (
+                guild_id,
+                channel_id,
+                message_id,
+                title,
+                description,
+                created_by
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                guild_id,
+                channel_id,
+                message_id,
+                title,
+                description,
+                created_by,
+            ),
+        )
+
+        await db.commit()
+
+        panel_id = cursor.lastrowid
+        await cursor.close()
+
+        if panel_id is None:
+            raise RuntimeError(
+                "Nem sikerült létrehozni a rangpanelt."
+            )
+
+        return panel_id
+
+
+async def get_role_panel(
+    guild_id: int,
+    panel_id: int,
+) -> dict | None:
+    """
+    Lekér egy rangpanelt az azonosítója alapján.
+    """
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+
+        async with db.execute(
+            """
+            SELECT
+                id,
+                guild_id,
+                channel_id,
+                message_id,
+                title,
+                description,
+                created_by,
+                created_at
+            FROM role_panels
+            WHERE guild_id = ?
+              AND id = ?
+            """,
+            (
+                guild_id,
+                panel_id,
+            ),
+        ) as cursor:
+            row = await cursor.fetchone()
+
+    if row is None:
+        return None
+
+    return dict(row)
+
+
+async def get_all_role_panels() -> list[dict]:
+    """
+    Lekéri az összes szerver összes rangpaneljét.
+    A bot indulásakor használjuk.
+    """
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+
+        async with db.execute(
+            """
+            SELECT
+                id,
+                guild_id,
+                channel_id,
+                message_id,
+                title,
+                description,
+                created_by,
+                created_at
+            FROM role_panels
+            ORDER BY id
+            """
+        ) as cursor:
+            rows = await cursor.fetchall()
+
+    return [dict(row) for row in rows]
+
+
+async def get_guild_role_panels(
+    guild_id: int,
+) -> list[dict]:
+    """
+    Lekéri egy szerver rangpaneljeit.
+    """
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+
+        async with db.execute(
+            """
+            SELECT
+                id,
+                guild_id,
+                channel_id,
+                message_id,
+                title,
+                description,
+                created_by,
+                created_at
+            FROM role_panels
+            WHERE guild_id = ?
+            ORDER BY id
+            """,
+            (guild_id,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+
+    return [dict(row) for row in rows]
+
+
+async def add_role_panel_button(
+    panel_id: int,
+    role_id: int,
+    label: str,
+    emoji: str | None,
+    style: int,
+) -> bool:
+    """
+    Rangot ad egy panelhez.
+
+    True: sikerült hozzáadni.
+    False: a rang már szerepel a panelen.
+    """
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        async with db.execute(
+            """
+            SELECT COUNT(*)
+            FROM role_panel_buttons
+            WHERE panel_id = ?
+            """,
+            (panel_id,),
+        ) as cursor:
+            count_row = await cursor.fetchone()
+
+        button_count = int(count_row[0]) if count_row else 0
+
+        if button_count >= 25:
+            raise ValueError(
+                "Egy panelen legfeljebb 25 ranggomb lehet."
+            )
+
+        cursor = await db.execute(
+            """
+            INSERT OR IGNORE INTO role_panel_buttons (
+                panel_id,
+                role_id,
+                label,
+                emoji,
+                style,
+                position
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                panel_id,
+                role_id,
+                label,
+                emoji,
+                style,
+                button_count,
+            ),
+        )
+
+        await db.commit()
+
+        added = cursor.rowcount > 0
+        await cursor.close()
+
+        return added
+
+
+async def get_role_panel_buttons(
+    panel_id: int,
+) -> list[dict]:
+    """
+    Lekéri egy rangpanel összes gombját.
+    """
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+
+        async with db.execute(
+            """
+            SELECT
+                id,
+                panel_id,
+                role_id,
+                label,
+                emoji,
+                style,
+                position
+            FROM role_panel_buttons
+            WHERE panel_id = ?
+            ORDER BY position, id
+            """,
+            (panel_id,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+
+    return [dict(row) for row in rows]
+
+
+async def remove_role_panel_button(
+    panel_id: int,
+    role_id: int,
+) -> bool:
+    """
+    Eltávolít egy ranggombot a panelről.
+    """
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            """
+            DELETE FROM role_panel_buttons
+            WHERE panel_id = ?
+              AND role_id = ?
+            """,
+            (
+                panel_id,
+                role_id,
+            ),
+        )
+
+        await db.commit()
+
+        removed = cursor.rowcount > 0
+        await cursor.close()
+
+        return removed
+
+
+async def delete_role_panel(
+    guild_id: int,
+    panel_id: int,
+) -> bool:
+    """
+    Törli a panel adatbázis-bejegyzését
+    és a hozzá tartozó gombokat.
+    """
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        async with db.execute(
+            """
+            SELECT id
+            FROM role_panels
+            WHERE guild_id = ?
+              AND id = ?
+            """,
+            (
+                guild_id,
+                panel_id,
+            ),
+        ) as cursor:
+            row = await cursor.fetchone()
+
+        if row is None:
+            return False
+
+        await db.execute(
+            """
+            DELETE FROM role_panel_buttons
+            WHERE panel_id = ?
+            """,
+            (panel_id,),
+        )
+
+        await db.execute(
+            """
+            DELETE FROM role_panels
+            WHERE guild_id = ?
+              AND id = ?
+            """,
+            (
+                guild_id,
+                panel_id,
+            ),
+        )
+
+        await db.commit()
+
+        return True
