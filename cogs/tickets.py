@@ -196,7 +196,7 @@ class TicketPanel(
         panel_embed = discord.Embed(
             title=title,
             description=description,
-            color=discord.Color.blurple(),
+            color=discord.Color.red(),
             timestamp=discord.utils.utcnow(),
         )
 

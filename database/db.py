@@ -182,7 +182,49 @@ async def init_database() -> None:
             """
         )
 
-        
+                # Linkvédelem: korlátozott rangok
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS link_protect_restricted_roles (
+                guild_id INTEGER NOT NULL,
+                role_id INTEGER NOT NULL,
+                PRIMARY KEY (guild_id, role_id)
+            )
+            """
+        )
+
+        # Linkvédelem: kivételes rangok
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS link_protect_exempt_roles (
+                guild_id INTEGER NOT NULL,
+                role_id INTEGER NOT NULL,
+                PRIMARY KEY (guild_id, role_id)
+            )
+            """
+        )
+
+        # Linkvédelem: kivételes csatornák
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS link_protect_exempt_channels (
+                guild_id INTEGER NOT NULL,
+                channel_id INTEGER NOT NULL,
+                PRIMARY KEY (guild_id, channel_id)
+            )
+            """
+        )
+
+        # Linkvédelem: engedélyezett domainek
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS link_protect_allowed_domains (
+                guild_id INTEGER NOT NULL,
+                domain TEXT NOT NULL COLLATE NOCASE,
+                PRIMARY KEY (guild_id, domain)
+            )
+            """
+        )
         await db.commit()
 
 
@@ -1230,3 +1272,279 @@ async def get_staff_ping_exempt_channels(
             rows = await cursor.fetchall()
 
     return [int(row[0]) for row in rows]
+# ======================================================
+# Linkvédelem adatbázis-függvényei
+# ======================================================
+
+
+async def _add_link_protect_id(
+    table_name: str,
+    column_name: str,
+    guild_id: int,
+    value: int,
+) -> bool:
+    """
+    Belső segédfüggvény rang vagy csatorna hozzáadásához.
+
+    A table_name és column_name értékeket csak a lentebbi
+    belső függvények használják, nem Discord-felhasználók.
+    """
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            f"""
+            INSERT OR IGNORE INTO {table_name} (
+                guild_id,
+                {column_name}
+            )
+            VALUES (?, ?)
+            """,
+            (guild_id, value),
+        )
+
+        await db.commit()
+
+        added = cursor.rowcount > 0
+        await cursor.close()
+
+        return added
+
+
+async def _remove_link_protect_id(
+    table_name: str,
+    column_name: str,
+    guild_id: int,
+    value: int,
+) -> bool:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            f"""
+            DELETE FROM {table_name}
+            WHERE guild_id = ?
+              AND {column_name} = ?
+            """,
+            (guild_id, value),
+        )
+
+        await db.commit()
+
+        removed = cursor.rowcount > 0
+        await cursor.close()
+
+        return removed
+
+
+async def _get_link_protect_ids(
+    table_name: str,
+    column_name: str,
+    guild_id: int,
+) -> list[int]:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        async with db.execute(
+            f"""
+            SELECT {column_name}
+            FROM {table_name}
+            WHERE guild_id = ?
+            ORDER BY {column_name}
+            """,
+            (guild_id,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+
+    return [int(row[0]) for row in rows]
+
+
+# ------------------------------------------------------
+# Korlátozott rangok
+# ------------------------------------------------------
+
+
+async def add_link_protect_restricted_role(
+    guild_id: int,
+    role_id: int,
+) -> bool:
+    return await _add_link_protect_id(
+        "link_protect_restricted_roles",
+        "role_id",
+        guild_id,
+        role_id,
+    )
+
+
+async def remove_link_protect_restricted_role(
+    guild_id: int,
+    role_id: int,
+) -> bool:
+    return await _remove_link_protect_id(
+        "link_protect_restricted_roles",
+        "role_id",
+        guild_id,
+        role_id,
+    )
+
+
+async def get_link_protect_restricted_roles(
+    guild_id: int,
+) -> list[int]:
+    return await _get_link_protect_ids(
+        "link_protect_restricted_roles",
+        "role_id",
+        guild_id,
+    )
+
+
+# ------------------------------------------------------
+# Kivételes rangok
+# ------------------------------------------------------
+
+
+async def add_link_protect_exempt_role(
+    guild_id: int,
+    role_id: int,
+) -> bool:
+    return await _add_link_protect_id(
+        "link_protect_exempt_roles",
+        "role_id",
+        guild_id,
+        role_id,
+    )
+
+
+async def remove_link_protect_exempt_role(
+    guild_id: int,
+    role_id: int,
+) -> bool:
+    return await _remove_link_protect_id(
+        "link_protect_exempt_roles",
+        "role_id",
+        guild_id,
+        role_id,
+    )
+
+
+async def get_link_protect_exempt_roles(
+    guild_id: int,
+) -> list[int]:
+    return await _get_link_protect_ids(
+        "link_protect_exempt_roles",
+        "role_id",
+        guild_id,
+    )
+
+
+# ------------------------------------------------------
+# Kivételes csatornák
+# ------------------------------------------------------
+
+
+async def add_link_protect_exempt_channel(
+    guild_id: int,
+    channel_id: int,
+) -> bool:
+    return await _add_link_protect_id(
+        "link_protect_exempt_channels",
+        "channel_id",
+        guild_id,
+        channel_id,
+    )
+
+
+async def remove_link_protect_exempt_channel(
+    guild_id: int,
+    channel_id: int,
+) -> bool:
+    return await _remove_link_protect_id(
+        "link_protect_exempt_channels",
+        "channel_id",
+        guild_id,
+        channel_id,
+    )
+
+
+async def get_link_protect_exempt_channels(
+    guild_id: int,
+) -> list[int]:
+    return await _get_link_protect_ids(
+        "link_protect_exempt_channels",
+        "channel_id",
+        guild_id,
+    )
+
+
+# ------------------------------------------------------
+# Engedélyezett domainek
+# ------------------------------------------------------
+
+
+async def add_link_protect_allowed_domain(
+    guild_id: int,
+    domain: str,
+) -> bool:
+    normalized_domain = domain.strip().lower()
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            """
+            INSERT OR IGNORE INTO link_protect_allowed_domains (
+                guild_id,
+                domain
+            )
+            VALUES (?, ?)
+            """,
+            (
+                guild_id,
+                normalized_domain,
+            ),
+        )
+
+        await db.commit()
+
+        added = cursor.rowcount > 0
+        await cursor.close()
+
+        return added
+
+
+async def remove_link_protect_allowed_domain(
+    guild_id: int,
+    domain: str,
+) -> bool:
+    normalized_domain = domain.strip().lower()
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            """
+            DELETE FROM link_protect_allowed_domains
+            WHERE guild_id = ?
+              AND domain = ?
+            """,
+            (
+                guild_id,
+                normalized_domain,
+            ),
+        )
+
+        await db.commit()
+
+        removed = cursor.rowcount > 0
+        await cursor.close()
+
+        return removed
+
+
+async def get_link_protect_allowed_domains(
+    guild_id: int,
+) -> list[str]:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        async with db.execute(
+            """
+            SELECT domain
+            FROM link_protect_allowed_domains
+            WHERE guild_id = ?
+            ORDER BY domain
+            """,
+            (guild_id,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+
+    return [str(row[0]) for row in rows]
