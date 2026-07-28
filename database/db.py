@@ -225,6 +225,49 @@ async def init_database() -> None:
             )
             """
         )
+                # Giveawayek
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS giveaways (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id INTEGER NOT NULL,
+                channel_id INTEGER NOT NULL,
+                message_id INTEGER UNIQUE,
+                host_id INTEGER NOT NULL,
+                prize TEXT NOT NULL,
+                winner_count INTEGER NOT NULL DEFAULT 1,
+                end_time TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                ended_at TEXT
+            )
+            """
+        )
+
+        # Giveaway jelentkezők
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS giveaway_entries (
+                giveaway_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                joined_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+                PRIMARY KEY (giveaway_id, user_id),
+
+                FOREIGN KEY (giveaway_id)
+                    REFERENCES giveaways(id)
+                    ON DELETE CASCADE
+            )
+            """
+        )
+
+        await db.execute(
+            """
+            CREATE INDEX IF NOT EXISTS
+            idx_giveaways_status_end_time
+            ON giveaways (status, end_time)
+            """
+        )
         await db.commit()
 
 
@@ -1548,3 +1591,303 @@ async def get_link_protect_allowed_domains(
             rows = await cursor.fetchall()
 
     return [str(row[0]) for row in rows]
+# ======================================================
+# Giveaway adatbázis-függvények
+# ======================================================
+
+
+async def create_giveaway(
+    guild_id: int,
+    channel_id: int,
+    host_id: int,
+    prize: str,
+    winner_count: int,
+    end_time: str,
+) -> int:
+    """
+    Új giveaway létrehozása.
+
+    Az end_time UTC időpont ISO formátumban.
+    """
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            """
+            INSERT INTO giveaways (
+                guild_id,
+                channel_id,
+                host_id,
+                prize,
+                winner_count,
+                end_time,
+                status
+            )
+            VALUES (?, ?, ?, ?, ?, ?, 'active')
+            """,
+            (
+                guild_id,
+                channel_id,
+                host_id,
+                prize,
+                winner_count,
+                end_time,
+            ),
+        )
+
+        await db.commit()
+
+        giveaway_id = cursor.lastrowid
+        await cursor.close()
+
+        if giveaway_id is None:
+            raise RuntimeError(
+                "Nem sikerült létrehozni a giveawayt."
+            )
+
+        return int(giveaway_id)
+
+
+async def set_giveaway_message_id(
+    giveaway_id: int,
+    message_id: int,
+) -> bool:
+    """
+    Elmenti a giveaway Discord-üzenetének azonosítóját.
+    """
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            """
+            UPDATE giveaways
+            SET message_id = ?
+            WHERE id = ?
+            """,
+            (
+                message_id,
+                giveaway_id,
+            ),
+        )
+
+        await db.commit()
+
+        updated = cursor.rowcount > 0
+        await cursor.close()
+
+        return updated
+
+
+async def get_giveaway_by_id(
+    giveaway_id: int,
+) -> dict | None:
+    """
+    Giveaway lekérése a belső azonosító alapján.
+    """
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+
+        async with db.execute(
+            """
+            SELECT *
+            FROM giveaways
+            WHERE id = ?
+            """,
+            (giveaway_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+
+    if row is None:
+        return None
+
+    return dict(row)
+
+
+async def get_giveaway_by_message(
+    message_id: int,
+) -> dict | None:
+    """
+    Giveaway lekérése a Discord-üzenet azonosítója alapján.
+    """
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+
+        async with db.execute(
+            """
+            SELECT *
+            FROM giveaways
+            WHERE message_id = ?
+            """,
+            (message_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+
+    if row is None:
+        return None
+
+    return dict(row)
+
+
+async def get_active_giveaways() -> list[dict]:
+    """
+    Az összes aktív giveaway lekérése.
+
+    Erre újraindítás után lesz szükség az időzítők
+    visszatöltéséhez.
+    """
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+
+        async with db.execute(
+            """
+            SELECT *
+            FROM giveaways
+            WHERE status = 'active'
+            ORDER BY end_time
+            """
+        ) as cursor:
+            rows = await cursor.fetchall()
+
+    return [
+        dict(row)
+        for row in rows
+    ]
+
+
+async def add_giveaway_entry(
+    giveaway_id: int,
+    user_id: int,
+) -> bool:
+    """
+    Felhasználó hozzáadása a jelentkezőkhöz.
+
+    False érték érkezik vissza, ha már jelentkezett.
+    """
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            """
+            INSERT OR IGNORE INTO giveaway_entries (
+                giveaway_id,
+                user_id
+            )
+            VALUES (?, ?)
+            """,
+            (
+                giveaway_id,
+                user_id,
+            ),
+        )
+
+        await db.commit()
+
+        added = cursor.rowcount > 0
+        await cursor.close()
+
+        return added
+
+
+async def remove_giveaway_entry(
+    giveaway_id: int,
+    user_id: int,
+) -> bool:
+    """
+    Felhasználó jelentkezésének visszavonása.
+    """
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            """
+            DELETE FROM giveaway_entries
+            WHERE giveaway_id = ?
+              AND user_id = ?
+            """,
+            (
+                giveaway_id,
+                user_id,
+            ),
+        )
+
+        await db.commit()
+
+        removed = cursor.rowcount > 0
+        await cursor.close()
+
+        return removed
+
+
+async def get_giveaway_entries(
+    giveaway_id: int,
+) -> list[int]:
+    """
+    Giveaway jelentkezőinek felhasználóazonosítói.
+    """
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        async with db.execute(
+            """
+            SELECT user_id
+            FROM giveaway_entries
+            WHERE giveaway_id = ?
+            ORDER BY joined_at
+            """,
+            (giveaway_id,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+
+    return [
+        int(row[0])
+        for row in rows
+    ]
+
+
+async def count_giveaway_entries(
+    giveaway_id: int,
+) -> int:
+    """
+    Megszámolja a giveaway jelentkezőit.
+    """
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        async with db.execute(
+            """
+            SELECT COUNT(*)
+            FROM giveaway_entries
+            WHERE giveaway_id = ?
+            """,
+            (giveaway_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+
+    if row is None:
+        return 0
+
+    return int(row[0])
+
+
+async def end_giveaway(
+    giveaway_id: int,
+) -> bool:
+    """
+    Aktív giveaway lezárása.
+    """
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            """
+            UPDATE giveaways
+            SET status = 'ended',
+                ended_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+              AND status = 'active'
+            """,
+            (giveaway_id,),
+        )
+
+        await db.commit()
+
+        updated = cursor.rowcount > 0
+        await cursor.close()
+
+        return updated
