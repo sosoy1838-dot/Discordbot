@@ -268,6 +268,42 @@ async def init_database() -> None:
             ON giveaways (status, end_time)
             """
         )
+                # Automoderáció alól kivételes rangok
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS automod_exempt_roles (
+                guild_id INTEGER NOT NULL,
+                role_id INTEGER NOT NULL,
+
+                PRIMARY KEY (guild_id, role_id)
+            )
+            """
+        )
+
+        # Automoderáció alól kivételes csatornák
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS automod_exempt_channels (
+                guild_id INTEGER NOT NULL,
+                channel_id INTEGER NOT NULL,
+
+                PRIMARY KEY (guild_id, channel_id)
+            )
+            """
+        )
+
+        # Tiltott szavak
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS automod_blocked_words (
+                guild_id INTEGER NOT NULL,
+                word TEXT NOT NULL COLLATE NOCASE,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+                PRIMARY KEY (guild_id, word)
+            )
+            """
+        )
         await db.commit()
 
 
@@ -1891,3 +1927,247 @@ async def end_giveaway(
         await cursor.close()
 
         return updated
+    # ======================================================
+# Automoderáció adatbázis-függvények
+# ======================================================
+
+
+# ------------------------------------------------------
+# Kivételes rangok
+# ------------------------------------------------------
+
+
+async def add_automod_exempt_role(
+    guild_id: int,
+    role_id: int,
+) -> bool:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            """
+            INSERT OR IGNORE INTO automod_exempt_roles (
+                guild_id,
+                role_id
+            )
+            VALUES (?, ?)
+            """,
+            (
+                guild_id,
+                role_id,
+            ),
+        )
+
+        await db.commit()
+
+        added = cursor.rowcount > 0
+        await cursor.close()
+
+        return added
+
+
+async def remove_automod_exempt_role(
+    guild_id: int,
+    role_id: int,
+) -> bool:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            """
+            DELETE FROM automod_exempt_roles
+            WHERE guild_id = ?
+              AND role_id = ?
+            """,
+            (
+                guild_id,
+                role_id,
+            ),
+        )
+
+        await db.commit()
+
+        removed = cursor.rowcount > 0
+        await cursor.close()
+
+        return removed
+
+
+async def get_automod_exempt_roles(
+    guild_id: int,
+) -> list[int]:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        async with db.execute(
+            """
+            SELECT role_id
+            FROM automod_exempt_roles
+            WHERE guild_id = ?
+            ORDER BY role_id
+            """,
+            (guild_id,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+
+    return [
+        int(row[0])
+        for row in rows
+    ]
+
+
+# ------------------------------------------------------
+# Kivételes csatornák
+# ------------------------------------------------------
+
+
+async def add_automod_exempt_channel(
+    guild_id: int,
+    channel_id: int,
+) -> bool:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            """
+            INSERT OR IGNORE INTO automod_exempt_channels (
+                guild_id,
+                channel_id
+            )
+            VALUES (?, ?)
+            """,
+            (
+                guild_id,
+                channel_id,
+            ),
+        )
+
+        await db.commit()
+
+        added = cursor.rowcount > 0
+        await cursor.close()
+
+        return added
+
+
+async def remove_automod_exempt_channel(
+    guild_id: int,
+    channel_id: int,
+) -> bool:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            """
+            DELETE FROM automod_exempt_channels
+            WHERE guild_id = ?
+              AND channel_id = ?
+            """,
+            (
+                guild_id,
+                channel_id,
+            ),
+        )
+
+        await db.commit()
+
+        removed = cursor.rowcount > 0
+        await cursor.close()
+
+        return removed
+
+
+async def get_automod_exempt_channels(
+    guild_id: int,
+) -> list[int]:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        async with db.execute(
+            """
+            SELECT channel_id
+            FROM automod_exempt_channels
+            WHERE guild_id = ?
+            ORDER BY channel_id
+            """,
+            (guild_id,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+
+    return [
+        int(row[0])
+        for row in rows
+    ]
+
+
+# ------------------------------------------------------
+# Tiltott szavak
+# ------------------------------------------------------
+
+
+async def add_automod_blocked_word(
+    guild_id: int,
+    word: str,
+) -> bool:
+    normalized_word = word.strip().casefold()
+
+    if not normalized_word:
+        return False
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            """
+            INSERT OR IGNORE INTO automod_blocked_words (
+                guild_id,
+                word
+            )
+            VALUES (?, ?)
+            """,
+            (
+                guild_id,
+                normalized_word,
+            ),
+        )
+
+        await db.commit()
+
+        added = cursor.rowcount > 0
+        await cursor.close()
+
+        return added
+
+
+async def remove_automod_blocked_word(
+    guild_id: int,
+    word: str,
+) -> bool:
+    normalized_word = word.strip().casefold()
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            """
+            DELETE FROM automod_blocked_words
+            WHERE guild_id = ?
+              AND word = ?
+            """,
+            (
+                guild_id,
+                normalized_word,
+            ),
+        )
+
+        await db.commit()
+
+        removed = cursor.rowcount > 0
+        await cursor.close()
+
+        return removed
+
+
+async def get_automod_blocked_words(
+    guild_id: int,
+) -> list[str]:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        async with db.execute(
+            """
+            SELECT word
+            FROM automod_blocked_words
+            WHERE guild_id = ?
+            ORDER BY word
+            """,
+            (guild_id,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+
+    return [
+        str(row[0])
+        for row in rows
+    ]
